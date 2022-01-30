@@ -1,0 +1,82 @@
+-- 테이블 생성 전 SQL Command에서 아래 진행하여 DB 디렉터리를 생성
+-- conn sys as sysdba (비밀번호 설정 없음)
+-- GRANT CREATE ANY DIRECTORY TO hr; 입력 <- hr 사용자에게 디렉토리 만들수 있는 권한을 준다.
+
+
+-- 디렉터리를 임의로 설정
+create or replace directory load_dir as 'C:\Users\COM\TEST_DB';
+
+-- table이 존재할 수 있기 때문에 테이블 삭제
+drop table X_ray;
+
+-- 테이블 생성
+create table X_ray (
+    patient_id  VARCHAR(20) not null,
+    examination_number VARCHAR(20) not null,
+    patient_name VARCHAR(10),
+    sex VARCHAR(20),
+    birth_date VARCHAR(10),
+    examination_date VARCHAR(20),
+    image  BLOB,
+    bone_age VARCHAR(20)
+    )
+    ;
+
+
+--프로시저 생성 (함수와 같은 역할) - 예를들어 def ad(a,b,c) 일때 아래 p_~가 a,b,c의미
+-- 프로시저 중 V_FILENAME이 디렉토리까지 연결되는 변수이다.
+CREATE OR REPLACE PROCEDURE PCD_TBL_BLOB_INSERT
+(   p_patient_id IN VARCHAR2 , p_examination_number IN VARCHAR2, p_patient_name IN VARCHAR2, p_sex IN VARCHAR2,
+    p_birth_date IN VARCHAR2, p_examination_date IN VARCHAR2,
+    V_FILENAME IN VARCHAR2)
+IS
+    -- 불러올 파일 (변수라 생각하면 좋음)
+    V_LOCATOR_BLOB  BLOB;
+
+    V_SOURCE_DATA_FILE BFILE := BFILENAME('LOAD_DIR', V_FILENAME);
+   -- dest_offset은 대상 LOB 데이터 내의 오프셋이다. 그것의 디폴트를 1로둔다.
+    V_DEST_OFFSET    NUMBER := 1;
+   -- src_offset은 원본 LOB 데이터 내의 오프셋이다. 그것의 디폴트를 1로 둔다.
+    V_SRC_OFFSET      NUMBER := 1;
+
+BEGIN
+    -- 아래는 insert하는 방법이다. empty_blob()은 값을 초기화 시키는 함수이다.
+    -- 초기화된 image에 V_LOCATOR_BLOB 값이 들어간다.
+    INSERT INTO X_RAY( patient_id, examination_number, patient_name, sex,
+                       birth_date, examination_date, image)
+    VALUES ( p_patient_id, p_examination_number, p_patient_name, p_sex, p_birth_date ,
+              p_examination_date ,empty_blob())
+    RETURNING image INTO V_LOCATOR_BLOB;
+        --dbms_lob은 패키지이다. 아래는 파일을 열고 blob파일을 로드하고 불러온다.
+         DBMS_LOB.OPEN(V_SOURCE_DATA_FILE,
+                       DBMS_LOB.LOB_READONLY);
+
+         DBMS_LOB.LOADBLOBFROMFILE(V_LOCATOR_BLOB,
+                                   V_SOURCE_DATA_FILE,
+                                   DBMS_LOB.GETLENGTH(V_SOURCE_DATA_FILE),
+                                   V_DEST_OFFSET,
+                                   V_SRC_OFFSET
+                                   );
+
+         DBMS_LOB.CLOSE(V_SOURCE_DATA_FILE);
+
+--         COMMIT;
+--
+--         DBMS_OUTPUT.PUT_LINE('CLOB 타입 데이터 입력 성공!!!');
+--
+--         EXCEPTION
+--            WHEN OTHERS THEN
+--                DBMS_OUTPUT.PUT_LINE('CLOB 타입 데이터 입력 실패!!!');
+END;
+/
+
+--함수 실행
+
+--Sample Data 입력
+--exec PCD_TBL_BLOB_INSERT('환자ID', '검사 회차', '이름', '성별', '생년월일', '검사일', '지정한 경로의 이미지명');
+exec PCD_TBL_BLOB_INSERT('001', '1', 'Patient1', 'Male', '2015-01-01', '2019-01-01','org001.jpg');
+exec PCD_TBL_BLOB_INSERT('002', '1', 'Patient2', 'Female', '2016-01-01',  '2020-01-01', 'org002.jpg');
+exec PCD_TBL_BLOB_INSERT('003', '1', 'Patient3', 'Female', '2015-01-01', '2019-01-01','org003.jpg');
+exec PCD_TBL_BLOB_INSERT('001', '2', 'Patient1', 'Male', '2015-01-01',  '2020-01-01', 'org009.jpg');
+
+COMMIT;
